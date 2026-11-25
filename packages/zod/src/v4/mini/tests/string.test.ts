@@ -394,3 +394,40 @@ test("z.currencyCode", () => {
   expect(z.parse(a, "EUR")).toBe("EUR");
   expect(z.safeParse(a, "eur")).toMatchObject(FAIL);
 });
+
+test("z.stringFormat async predicate", async () => {
+  const failing = z.stringFormat("custom", async () => false);
+  const passing = z.stringFormat("custom", async (value) => value === "ok");
+  const promiseFail = z.stringFormat("custom", () => Promise.resolve(false));
+
+  expect(() => z.safeParse(failing, "bad")).toThrow(z.core.$ZodAsyncError);
+  expect(() => z.parse(passing, "ok")).toThrow(z.core.$ZodAsyncError);
+  expect(() => z.safeParse(promiseFail, "bad")).toThrow(z.core.$ZodAsyncError);
+  expect(z.safeParse(failing, 1).success).toBe(false);
+
+  expect(await z.safeParseAsync(failing, "bad")).toMatchObject({
+    success: false,
+    error: { issues: [{ code: "invalid_format", format: "custom" }] },
+  });
+  await expect(z.parseAsync(failing, "bad")).rejects.toThrow();
+  expect(await z.parseAsync(passing, "ok")).toBe("ok");
+  expect((await z.safeParseAsync(passing, "no")).success).toBe(false);
+  expect(
+    await z.parseAsync(
+      z.stringFormat("custom", () => Promise.resolve(true)),
+      "ok"
+    )
+  ).toBe("ok");
+
+  // a later branch must not answer when the predicate returns a promise
+  const union = z.union([failing, z.string()]);
+  expect(() => z.safeParse(union, "bad")).toThrow(z.core.$ZodAsyncError);
+  expect(() => z.safeParse(z.compile(union), "bad")).toThrow(z.core.$ZodAsyncError);
+  const nested = z.union([z.object({ a: failing }), z.object({ a: z.string() })]);
+  expect(() => z.safeParse(nested, { a: "x" })).toThrow(z.core.$ZodAsyncError);
+  expect(() => z.safeParse(z.compile(nested), { a: "x" })).toThrow(z.core.$ZodAsyncError);
+  expect(() => z.compile(failing, { strict: true })).toThrow(z.ZodCompileAsyncError);
+  expect(() => z.compile(nested, { strict: true })).toThrow(z.ZodCompileAsyncError);
+  expect((await z.safeParseAsync(z.compile(failing), "bad")).success).toBe(false);
+  expect(await z.parseAsync(z.compile(passing), "ok")).toBe("ok");
+});

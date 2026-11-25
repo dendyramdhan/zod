@@ -828,6 +828,8 @@ test("a thenable predicate throws rather than rejecting", () => {
   );
   differential(z.string().refine((() => Promise.resolve(true)) as never), ["x", 1]);
   differential(z.string().superRefine(((_v: any, _c: any) => Promise.resolve(true)) as never), ["x", 1]);
+  differential(z.stringFormat("custom", (() => Promise.resolve(false)) as never), ["x", 1]);
+  differential(z.stringFormat("custom", (() => Promise.resolve(true)) as never), ["ok", 1]);
 
   // A transform is the other way round: the interpreter's own union also falls through to the next branch, so INVALID there is parity rather than a bail-out.
   differential(z.string().transform((() => Promise.resolve(1)) as never), ["x"], { fallbackOk: true });

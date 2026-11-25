@@ -1273,6 +1273,22 @@ test("ZodCompileAsyncError thrown on async refinement", () => {
   expect(() => compile(schema, { strict: true })).toThrow(ZodCompileAsyncError);
 });
 
+test("ZodCompileAsyncError thrown on async string format", () => {
+  const schema = z.stringFormat("custom", async () => false);
+  expect(() => compile(schema, { strict: true })).toThrow(ZodCompileAsyncError);
+  // promise-returning functions still compile and throw at parse time
+  const thenable = z.stringFormat("custom", () => Promise.resolve(false));
+  expect(() => compile(thenable, { strict: true })).not.toThrow();
+  const union = z.union([thenable, z.string()]);
+  expect(() => compile(union).safeParse("bad")).toThrow($ZodAsyncError);
+  const nested = z.union([z.object({ a: schema }), z.object({ a: z.string() })]);
+  expect(() => compile(nested, { strict: true })).toThrow(ZodCompileAsyncError);
+  expect(() => compile(nested).safeParse({ a: "x" })).toThrow($ZodAsyncError);
+  const sync = z.stringFormat("digits", (value) => /^\d+$/.test(value));
+  expect(valid(compile(sync), "123")).toBe("123");
+  invalid(compile(sync), "ab");
+});
+
 test("ZodCompileAsyncError thrown on async transform", () => {
   const schema = z.string().transform(async (s) => s.length);
   expect(() => compile(schema, { strict: true })).toThrow(ZodCompileAsyncError);

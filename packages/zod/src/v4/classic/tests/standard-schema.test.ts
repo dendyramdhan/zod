@@ -151,3 +151,57 @@ test("a synchronously throwing check rejects through ~standard instead of throwi
   expect(result).toBeInstanceOf(Promise);
   await expect(result as Promise<unknown>).rejects.toThrow("boom");
 });
+
+test("~standard.validate applies libraryOptions like safeParse", async () => {
+  const schema = z.object({ age: z.number().min(18), named: z.number().min(18, "Too young") });
+  const input = { age: 3, named: 3 };
+  const libraryOptions = { error: () => "Must be an adult", reportInput: true };
+
+  const sync = schema["~standard"].validate(input, { libraryOptions }) as {
+    issues: { message: string }[];
+  };
+  expect(sync.issues.map((issue) => issue.message)).toEqual(["Must be an adult", "Too young"]);
+  expect(sync.issues).toEqual(schema.safeParse(input, libraryOptions).error!.issues);
+
+  const previous = z.config().customError;
+  z.config({ customError: () => "from config" });
+  try {
+    const overConfig = z
+      .number()
+      .min(18)
+      ["~standard"].validate(3, {
+        libraryOptions: { error: () => "Must be an adult" },
+      }) as { issues: { message: string }[] };
+    expect(overConfig.issues[0]?.message).toEqual("Must be an adult");
+  } finally {
+    z.config({ customError: previous });
+  }
+
+  const asyncSchema = schema.refine(async () => true);
+  const asyncResult = (await asyncSchema["~standard"].validate(input, { libraryOptions })) as {
+    issues: { message: string }[];
+  };
+  expect(asyncResult.issues.map((issue) => issue.message)).toEqual(["Must be an adult", "Too young"]);
+  expect(asyncResult.issues).toEqual((await asyncSchema.safeParseAsync(input, libraryOptions)).error!.issues);
+
+  expect(schema["~standard"].validate({ age: 21, named: 21 }, { libraryOptions })).toEqual({
+    value: { age: 21, named: 21 },
+  });
+  expect(await asyncSchema["~standard"].validate({ age: 21, named: 21 }, { libraryOptions })).toEqual({
+    value: { age: 21, named: 21 },
+  });
+
+  const skipped = z
+    .string()
+    .min(5)
+    ["~standard"].validate("abc", {
+      libraryOptions: { skipChecks: true },
+    }) as { issues: unknown[] };
+  expect(skipped.issues).toHaveLength(1);
+
+  const codec = z.codec(z.string(), z.number(), {
+    decode: (str) => Number(str),
+    encode: (num) => num.toString(),
+  });
+  expect(codec["~standard"].validate("42", { libraryOptions: { direction: "backward" } })).toEqual({ value: 42 });
+});

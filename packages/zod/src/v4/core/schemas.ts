@@ -335,21 +335,33 @@ export const $ZodType: core.$constructor<$ZodType> = /*@__PURE__*/ core.$constru
 const toStandardResult = (r: ParsePayload, ctx: ParseContextInternal) =>
   r.issues.length ? { issues: r.issues.map((iss) => util.finalizeIssue(iss, ctx, core.config())) } : { value: r.value };
 
-async function validateAsync(inst: $ZodType, value: unknown) {
-  const ctx: ParseContextInternal = { async: true };
+// spread would let libraryOptions set `direction` and `skipChecks`
+const standardContext = (lib: Record<string, unknown>, isAsync: boolean): ParseContextInternal =>
+  ({
+    error: lib.error,
+    reportInput: lib.reportInput,
+    jitless: lib.jitless,
+    async: isAsync,
+  }) as ParseContextInternal;
+
+async function validateAsync(inst: $ZodType, value: unknown, options: StandardSchemaV1.Options | undefined) {
+  const lib = options?.libraryOptions;
+  const ctx = lib ? standardContext(lib, true) : { async: true };
   return toStandardResult((await inst._zod.run({ value, issues: [] }, ctx)) as ParsePayload, ctx);
 }
 
 export function standardProps(inst: $ZodType): StandardSchemaV1.Props<any, any> {
   return {
-    validate: (value: unknown) => {
-      const ctx: ParseContextInternal = { async: false };
+    validate: (value, options) => {
+      // no libraryOptions stays on the one-property context
+      const lib = options?.libraryOptions;
+      const ctx = lib ? standardContext(lib, false) : { async: false };
       try {
         const r = inst._zod.run({ value, issues: [] }, ctx);
         if (!(r instanceof Promise)) return toStandardResult(r, ctx);
       } catch (_) {}
       // async function so a synchronously throwing check rejects instead of escaping validate
-      return validateAsync(inst, value);
+      return validateAsync(inst, value, options);
     },
     vendor: "zod",
     version: 1 as const,
